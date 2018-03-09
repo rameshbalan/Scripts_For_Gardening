@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+   <body>
+
+    <h3>Allele Frequency</h3>
+      <table border = 1>
+         {% for key, value in allele.iteritems() %}
+
+            <tr>
+               <th> {{ key }} </th>
+               <td> {{ value }} </td>
+            </tr>
+
+         {% endfor %}
+      </table>
+
+      <h4>Hardy-Weinberg Equation value is {{HW}}</h4>
+
+    <h3>Confidence Interval for Allele Frequency</h3>
+      <table border = 1>
+         {% for key, value in CI.iteritems() %}
+
+            <tr>
+               <th> {{ key }} </th>
+               <td> {{ value }} </td>
+            </tr>
+
+         {% endfor %}
+      </table>
+
+    <h3>Expected Number of Individuals</h3>
+      <table border = 1>
+         {% for key, value in exp.iteritems() %}
+
+            <tr>
+               <th> {{ key }} </th>
+               <td> {{ value }} </td>
+            </tr>
+
+         {% endfor %}
+      </table>
+
+    <h3>Observed Number of Individuals</h3>
+      <table border = 1>
+         {% for key, value in obs.iteritems() %}
+
+            <tr>
+               <th> {{ key }} </th>
+               <td> {{ value }} </td>
+            </tr>
+
+         {% endfor %}
+      </table>
+
+      <h3>Hypothesis Test</h3>
+      <h4>Ho: There is no significant difference between the observed and the expected number of individuals</h4>
+      <h4>Ha: There is significant difference between the observed and the expected number of individuals</h4>
+      <h4>Chi Square Test Statistic between Observed and Expected is {{Chi}}</h4>
+      <h4>P-value for Chi Square Test is {{p_value}}</h4>
+      {% if p_value < 0.05 %}
+      <h4>Ho is rejected. There is significant difference between the two.</h4>
+      {% else %}
+      <h4>There is no enough evidence to reject Ho. There is NO significant difference between the two.</h4>
+      {% endif %}
+
+   </body>
+</html>

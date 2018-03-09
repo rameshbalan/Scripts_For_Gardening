@@ -1,0 +1,271 @@
+---
+title: "Automatic Garden Watering System"
+author: "Balan Ramesh"
+date: "November 20, 2017"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+##Source
+
+This is a recreation of the project Raspberry Pi Automated Plant Watering with Website by [Ben Eagan](https://www.hackster.io/ben-eagan) using PINEA64 instead of Raspberrypi.
+The source to this project is available [here](https://www.hackster.io/ben-eagan/raspberry-pi-automated-plant-watering-with-website-8af2dc)
+
+<iframe width="560" height="315" src="http://www.youtube.com/embed/mQNJpWkdmbc" frameborder="0" allowfullscreen></iframe> </iframe>
+
+##Materials:
+* PineA4
+* Soil Moisture Sensor
+* Flexible Water Line
+* 5V Relay
+* 3-6V Mini Micro Submersible Pump
+* TOLI 120pcs Multicolored Dupont Wire
+* 5v Power Supply (Any USB Cable+ USB Wall Charger)
+
+##Wiring:
+The first thing I did was make my 5V power supply from a usb cable. Using an old iphone cable, I cut the iphone side off and fished out a red and black wire. I soldered some sturdier wires to this, and plugged it into a wall adapter. Checking with a voltmeter, this gave me 5V output.
+
+##Rpi Wiring
+![Image](/Users/balan/Desktop/GPIO.jpg)
+
+Following this GPIO layout:
+
+* Water Sensor - plug the positive lead from the water sensor to pin 2, and the negative lead to pin 6. Plug the signal wire (yellow) to pin 8.
+
+* Relay - Plug the positive lead from pin 7 to IN1 on the Relay Board. Also connect Pin 2 to VCC, and Pin 5 to GND on the Relay board.
+
+* Pump - Connect your pump to a power source, run the black ground wire between slots B and C of relay module 1 (when the RPi sends a LOW signal of 0v to pin 1, this will close the circuit turning on the pump).
+
+* This diagram should capture the correct GPIO so long as you are using Raspberry Pi 3. Not shown is another power source to the RPi.
+
+##Hardware Setup:
+
+Once the wiring has been completed, attach the flexible hose to the pump (I used electrical tape), and drop it into a jar of water. Attach the other end of the hose to your plant.
+
+Now plug in all power sources (and make sure your Raspberry Pi is running some version of an operating system, like this one here).
+
+##Software Setup
+
+Note: If you get the wiring exactly as described above, my code in the next section will work with no modifications. There are two parts to this setup. One file controls all the GPIO and circuit logic, and the other runs a local web server.
+
+###**Auto_water.py**
+
+```{python, eval=FALSE}
+import water
+
+if __name__ == "__main__":
+    water.auto_water()
+```
+
+###**web_plants.py**
+
+```{python, eval=FALSE}
+from flask import Flask, render_template, redirect, url_for
+import psutil
+import datetime
+import water
+import os
+
+app = Flask(__name__)
+
+def template(title = "HELLO!", text = ""):
+    now = datetime.datetime.now()
+    timeString = now
+    templateDate = {
+        'title' : title,
+        'time' : timeString,
+        'text' : text
+        }
+    return templateDate
+
+@app.route("/")
+def hello():
+    templateData = template()
+    return render_template('main.html', **templateData)
+
+@app.route("/last_watered")
+def check_last_watered():
+    templateData = template(text = water.get_last_watered())
+    return render_template('main.html', **templateData)
+
+@app.route("/sensor")
+def action():
+    status = water.get_status()
+    message = ""
+    if (status == 1):
+        message = "Water me please!"
+    else:
+        message = "I'm a happy plant"
+
+    templateData = template(text = message)
+    return render_template('main.html', **templateData)
+
+@app.route("/water")
+def action2():
+    water.pump_on()
+    templateData = template(text = "Watered Once")
+    return render_template('main.html', **templateData)
+
+@app.route("/auto/water/<toggle>")
+def auto_water(toggle):
+    running = False
+    if toggle == "ON":
+        templateData = template(text = "Auto Watering On")
+        for process in psutil.process_iter():
+            try:
+                if process.cmdline()[1] == 'auto_water.py':
+                    templateData = template(text = "Already running")
+                    running = True
+            except:
+                pass
+        if not running:
+            os.system("python3.4 auto_water.py&")
+    else:
+        templateData = template(text = "Auto Watering Off")
+        os.system("pkill -f water.py")
+
+    return render_template('main.html', **templateData)
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=80, debug=True)
+```
+
+###**water.py**
+
+```{python, eval=FALSE}
+# External module imp
+import RPi.GPIO as GPIO
+import datetime
+import time
+
+init = False
+
+GPIO.setmode(GPIO.BOARD) # Broadcom pin-numbering scheme
+
+def get_last_watered():
+    try:
+        f = open("last_watered.txt", "r")
+        return f.readline()
+    except:
+        return "NEVER!"
+      
+def get_status(pin = 8):
+    GPIO.setup(pin, GPIO.IN) 
+    return GPIO.input(pin)
+
+def init_output(pin):
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.LOW)
+    GPIO.output(pin, GPIO.HIGH)
+    
+def auto_water(delay = 5, pump_pin = 7, water_sensor_pin = 8):
+    consecutive_water_count = 0
+    init_output(pump_pin)
+    print("Here we go! Press CTRL+C to exit")
+    try:
+        while 1 and consecutive_water_count < 10:
+            time.sleep(delay)
+            wet = get_status(pin = water_sensor_pin) == 0
+            if not wet:
+                if consecutive_water_count < 5:
+                    pump_on(pump_pin, 1)
+                consecutive_water_count += 1
+            else:
+                consecutive_water_count = 0
+    except KeyboardInterrupt: # If CTRL+C is pressed, exit cleanly:
+        GPIO.cleanup() # cleanup all GPI
+
+def pump_on(pump_pin = 7, delay = 1):
+    init_output(pump_pin)
+    f = open("last_watered.txt", "w")
+    f.write("Last watered {}".format(datetime.datetime.now()))
+    f.close()
+    GPIO.output(pump_pin, GPIO.LOW)
+    time.sleep(1)
+    GPIO.output(pump_pin, GPIO.HIGH)
+```
+
+###**main.html**
+
+```{bash, eval=FALSE}
+<!DOCTYPE html>
+<head>
+  <title>{{ title }}</title>
+</head>
+
+<body>
+  <h1>PLANT HELPLINE</h1>
+  <h2>The date and time on the server is: {{ time }}</h2>
+  <h2> {{ text }} </h2>
+  <a href="/auto/water/ON"><button>Turn ON Auto Watering</button></a>
+  <a href="/auto/water/OFF"><button>Turn OFF Auto Watering</button></a>
+  <a href="/sensor"><button>Check Soil Status</button></a> <br>
+  <a href="/water"><button>Water Once</button></a>
+  <a href="/last_watered"><button>Check Time Last Watered</button></a>
+
+</body>
+</html>
+```
+
+##GPIO Script
+
+Let's start with the code for controlling the GPIO. This requires the RPi.GPIO python library which can be installed on your Raspberry Pi as follows:
+
+```{bash, eval=FALSE}
+python 3.4 -m pip install RPi.GPIO
+```
+
+With that installed, you should be able to use the water.py script found here. You can test this is working correctly by running an interactive python session as follows:
+
+```{bash, eval=FALSE}
+python 3.4 
+>>> import water 
+>>> water.get_status()
+>>> water.pump_on()
+```
+This should print a statement about whether your sensor is wet or dry (get_status()), and also turn on the pump for 1s. If these work as expected, you're in good shape.  
+
+At this point you can also calibrate your water sensor. If your plant status is incorrect, try turning the small screw (potentiometer) on the sensor while it is in moist soil until the 2nd light comes on.
+
+##Flask Webserver
+
+The next aspect of this project is to setup the web server. This code can be found here in a file called web_plants.py. This python script runs a web server enabling various actions from the script described above.
+
+You will need to keep web_plants.py in the same directory as water.py and auto_water.py described above. You will also need a subdirectory called "templates" containing the html file here called main.html.
+
+You will need to install flask, and psutil as follows:
+
+```{bash, eval=FALSE}
+python 3.4 -m pip install flask
+python 3.4 -m pip install psutil
+```
+
+Make sure to place the web_plants.py file in the same directory as the water.py script above. You will also need to create a sub-directory called templates, and place main.html in the templates directory. Now run the following command command to start your web server:
+
+```{bash, eval=FALSE}
+sudo python 3.4 web_plants.py
+```
+
+Now if you navigate to the ip address of your RPi, you should see a web dashboard something like this:
+
+Try clicking the buttons to make sure everything works as expected! If so, you're off to the races.
+
+##Run Website Automatically
+
+Finally, you probably want the website to auto start when the RPi gets turned on. This can be done using a tool called cronjob, which registers your website as a startup command.
+
+To do so, type:
+
+```{bash, eval=FALSE}
+sudo crontab -e
+```
+This will bring up a text editor. Add a single line that reads (and make sure to leave one empty line below):  
+__At reboot__
+```{bash, eval=FALSE}
+cd <your path to web_plants> 
+sudo python 3.4 web_plants.py
+```
+
+Now when you reboot your pi, it should auto start the server.
